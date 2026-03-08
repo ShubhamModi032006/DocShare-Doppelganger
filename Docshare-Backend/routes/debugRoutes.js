@@ -11,7 +11,7 @@ router.post('/test-email', async (req, res) => {
     console.log('🧪 Testing Resend email service...');
     console.log('📧 Target email:', targetEmail);
     console.log('🔧 Resend API Key configured:', process.env.RESEND_API_KEY ? 'YES' : 'NO');
-    console.log('📨 From email:', process.env.RESEND_FROM_EMAIL || 'onboarding@resend.dev');
+    console.log('From email:', process.env.RESEND_FROM_EMAIL || 'onboarding@resend.dev');
     console.log('🌍 Environment:', process.env.NODE_ENV);
     
     const testOTP = '123456'; // Test OTP

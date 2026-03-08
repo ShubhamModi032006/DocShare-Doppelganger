@@ -20,7 +20,7 @@ async function testResend() {
     console.log('');
     
     // Test sending email
-    console.log('📧 Testing email sending...');
+    console.log('📧// Test with a simple email');
     const emailResult = await sendEmailWithRetry({
       from: process.env.RESEND_FROM_EMAIL || 'onboarding@resend.dev',
       to: process.env.RESEND_TEST_EMAIL || process.env.RESEND_FROM_EMAIL || 'onboarding@resend.dev',
