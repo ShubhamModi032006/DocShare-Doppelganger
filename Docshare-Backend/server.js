@@ -22,6 +22,7 @@ connectDB();
 const allowedOrigins = [
   'http://localhost:5173',
   'http://localhost:3000',
+  'https://docshare-three.vercel.app',
   process.env.FRONTEND_URL,
 ].filter(Boolean);
 
@@ -29,12 +30,22 @@ app.use(cors({
   origin: (origin, callback) => {
     // Allow requests with no origin (mobile apps, curl, Postman)
     if (!origin) return callback(null, true);
-    if (allowedOrigins.includes(origin)) return callback(null, true);
+    
+    console.log(`🌍 CORS request from origin: ${origin}`);
+    console.log(`📋 Allowed origins:`, allowedOrigins);
+    
+    if (allowedOrigins.includes(origin)) {
+      console.log(`✅ CORS allowed for origin: ${origin}`);
+      return callback(null, true);
+    }
+    
+    console.error(`❌ CORS blocked for origin: ${origin}`);
     callback(new Error(`CORS: origin ${origin} not allowed`));
   },
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
   credentials: true,
+  optionsSuccessStatus: 200 // Some legacy browsers choke on 204
 }));
 // ──────────────────────────────────────────────────────────────────────────
 
@@ -43,6 +54,15 @@ app.use(express.urlencoded({ extended: true }));
 
 // Health check — used by keep-alive ping and uptime monitors
 app.get('/health', (req, res) => res.status(200).json({ status: 'ok' }));
+
+// Handle preflight requests for all routes
+app.options('*', (req, res) => {
+  res.header('Access-Control-Allow-Origin', req.headers.origin || '*');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  res.header('Access-Control-Allow-Credentials', 'true');
+  res.status(200).send();
+});
 
 // Define Routes
 app.use('/auth', authRoutes);
