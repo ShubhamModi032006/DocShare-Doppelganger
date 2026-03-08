@@ -22,7 +22,7 @@ async function testResend() {
     // Test sending email
     console.log('📧 Testing email sending...');
     const emailResult = await sendEmailWithRetry({
-      from: `DocShare Test <${process.env.RESEND_FROM_EMAIL || 'onboarding@resend.dev'}>`,
+      from: process.env.RESEND_FROM_EMAIL || 'onboarding@resend.dev',
       to: process.env.RESEND_TEST_EMAIL || process.env.RESEND_FROM_EMAIL || 'onboarding@resend.dev',
       subject: '🧪 Resend API Test - DocShare Backend',
       text: 'This is a test email to verify Resend API is working correctly with DocShare backend.',

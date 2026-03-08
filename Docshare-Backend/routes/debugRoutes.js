@@ -11,15 +11,15 @@ router.post('/test-email', async (req, res) => {
     console.log('🧪 Testing Resend email service...');
     console.log('📧 Target email:', targetEmail);
     console.log('🔧 Resend API Key configured:', process.env.RESEND_API_KEY ? 'YES' : 'NO');
-    console.log('� From email:', process.env.RESEND_FROM_EMAIL || 'onboarding@resend.dev');
+    console.log('📨 From email:', process.env.RESEND_FROM_EMAIL || 'onboarding@resend.dev');
     console.log('🌍 Environment:', process.env.NODE_ENV);
     
     const testOTP = '123456'; // Test OTP
     const result = await sendEmailWithRetry({
-      from: `DocShare Test <${process.env.RESEND_FROM_EMAIL || 'onboarding@resend.dev'}>`,
+      from: process.env.RESEND_FROM_EMAIL || 'onboarding@resend.dev',
       to: targetEmail,
       subject: '🧪 DocShare Email Service Test',
-      text: `This is a test email from DocShare backend.\n\nTest OTP: ${testOTP}\n\nIf you receive this, the email service is working correctly.`,
+      text: `This is a test email from DocShare backend.\n\nTest OTP: ${testOTP}\n\nIf you receive this, email service is working correctly.`,
       html: `
         <div style="font-family:Arial,sans-serif;max-width:480px;margin:auto;padding:24px">
           <h2 style="color:#0F172A;margin-bottom:4px">🧪 Email Service Test</h2>
@@ -27,7 +27,7 @@ router.post('/test-email', async (req, res) => {
           <div style="background:#F1F5F9;border-radius:12px;padding:24px;text-align:center;margin:20px 0">
             <span style="font-size:40px;font-weight:700;letter-spacing:14px;color:#C9A227;font-family:monospace">${testOTP}</span>
           </div>
-          <p style="color:#94A3B8;font-size:12px">If you receive this, the email service is working correctly.</p>
+          <p style="color:#94A3B8;font-size:12px">If you receive this, email service is working correctly.</p>
           <hr style="border:none;border-top:1px solid #E2E8F0;margin:20px 0">
           <p style="color:#64748B;font-size:11px">
             <strong>Debug Info:</strong><br>

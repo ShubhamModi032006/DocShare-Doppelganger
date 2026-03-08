@@ -102,7 +102,7 @@ const loginUser = async (req, res) => {
     const sendEmail = async () => {
       try {
         await sendEmailWithRetry({
-          from: `DocShare <${process.env.RESEND_FROM_EMAIL || 'onboarding@resend.dev'}>`,
+          from: process.env.RESEND_FROM_EMAIL || 'onboarding@resend.dev',
           to: user.email,
           subject: 'Your DocShare Login OTP',
           text: `Your OTP is: ${otp}\n\nValid for 10 minutes. Do not share it.`,
