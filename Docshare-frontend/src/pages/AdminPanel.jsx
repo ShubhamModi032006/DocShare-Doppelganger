@@ -17,16 +17,24 @@ export default function AdminPanel() {
     .filter(u => u.name.toLowerCase().includes(search.toLowerCase()) || u.email.toLowerCase().includes(search.toLowerCase()))
     .filter(u => roleFilter === 'all' || u.role === roleFilter);
 
-  const handleToggleUser = (user) => {
+  const handleToggleUser = async (user) => {
     const newStatus = user.status === 'active' ? 'inactive' : 'active';
-    updateUserStatus(user.id, newStatus);
-    toast.success(`User ${newStatus === 'active' ? 'activated' : 'deactivated'} successfully`);
+    try {
+      await updateUserStatus(user.id, newStatus);
+      toast.success(`User ${newStatus === 'active' ? 'activated' : 'deactivated'} successfully`);
+    } catch {
+      toast.error('Failed to update user status');
+    }
     setConfirmAction(null);
   };
 
-  const handleDeleteFile = (file) => {
-    deleteFile(file.id);
-    toast.success('File deleted successfully');
+  const handleDeleteFile = async (file) => {
+    try {
+      await deleteFile(file.id);
+      toast.success('File deleted successfully');
+    } catch {
+      toast.error('Failed to delete file');
+    }
     setConfirmAction(null);
   };
 

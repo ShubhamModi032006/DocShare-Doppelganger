@@ -115,8 +115,18 @@ const deleteFile = async (req, res) => {
   }
 };
 
+const getAllFiles = async (req, res) => {
+  try {
+    const files = await File.find({}).populate('owner', 'name');
+    res.status(200).json(files.map(formatFileResponse));
+  } catch (error) {
+    res.status(500).json({ message: 'Failed to retrieve files', error: error.message });
+  }
+};
+
 module.exports = {
   uploadFile,
   getMyFiles,
+  getAllFiles,
   deleteFile
 };

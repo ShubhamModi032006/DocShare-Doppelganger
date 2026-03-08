@@ -51,8 +51,8 @@ export default function RegisterPage() {
     setIsSubmitting(true);
     try {
       await register({ name: form.name, email: form.email, password: form.password, role: form.role });
-      toast.success('Account created! Welcome to DocShare.');
-      navigate('/dashboard');
+      toast.success('Account created! Please sign in with your credentials.');
+      navigate('/login');
     } catch (err) {
       toast.error(err.message);
     } finally {

@@ -1,5 +1,5 @@
 const express = require('express');
-const { uploadFile, getMyFiles, deleteFile } = require('../controllers/fileController');
+const { uploadFile, getMyFiles, getAllFiles, deleteFile } = require('../controllers/fileController');
 const { protect } = require('../middleware/authMiddleware');
 const { authorizeRoles } = require('../middleware/roleMiddleware');
 const upload = require('../middleware/uploadMiddleware');
@@ -12,6 +12,7 @@ router.use(protect);
 
 router.post('/upload', uploadLimiter, authorizeRoles('Administrator', 'Partner'), upload.single('file'), uploadFile);
 router.get('/my-files', getMyFiles);
+router.get('/all', authorizeRoles('Administrator'), getAllFiles);
 // Note: Delete route allows owners or Admins to delete, controlled in the controller
 router.delete('/:id', authorizeRoles('Administrator', 'Partner'), deleteFile);
 

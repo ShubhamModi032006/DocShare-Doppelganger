@@ -1,23 +1,19 @@
 import { createContext, useContext, useState, useEffect } from 'react';
 import toast from 'react-hot-toast';
+import api from '../utils/api';
 
 const AuthContext = createContext(null);
-
-const MOCK_USERS = [
-  { id: 1, name: 'Admin User', email: 'admin@docshare.com', password: 'admin123', role: 'Administrator', avatar: 'AU', mfaEnabled: true },
-  { id: 2, name: 'John Partner', email: 'partner@docshare.com', password: 'partner123', role: 'Partner', avatar: 'JP', mfaEnabled: false },
-  { id: 3, name: 'Client Alice', email: 'client@docshare.com', password: 'client123', role: 'Client', avatar: 'CA', mfaEnabled: false },
-];
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [mfaPending, setMfaPending] = useState(false);
-  const [pendingUser, setPendingUser] = useState(null);
+  const [pendingUserId, setPendingUserId] = useState(null);
 
   useEffect(() => {
     const stored = localStorage.getItem('docshare_user');
-    if (stored) {
+    const token = localStorage.getItem('docshare_token');
+    if (stored && token) {
       try { setUser(JSON.parse(stored)); } catch {}
     }
     setLoading(false);
@@ -25,65 +21,59 @@ export function AuthProvider({ children }) {
 
   const login = async (email, password) => {
     setLoading(true);
-    await new Promise(r => setTimeout(r, 800));
-    const found = MOCK_USERS.find(u => u.email === email && u.password === password);
-    if (!found) {
-      setLoading(false);
-      throw new Error('Invalid email or password');
-    }
-    if (found.mfaEnabled) {
-      setPendingUser(found);
+    try {
+      const { data } = await api.post('/auth/login', { email, password });
+      // Backend sends OTP and returns userId
+      setPendingUserId(data.userId);
       setMfaPending(true);
       setLoading(false);
       return { mfaRequired: true };
+    } catch (err) {
+      setLoading(false);
+      throw new Error(err.response?.data?.message || 'Login failed');
     }
-    const { password: _, ...safeUser } = found;
-    setUser(safeUser);
-    localStorage.setItem('docshare_user', JSON.stringify(safeUser));
-    setLoading(false);
-    return { mfaRequired: false };
   };
 
   const verifyMfa = async (otp) => {
     setLoading(true);
-    await new Promise(r => setTimeout(r, 600));
-    if (otp === '123456') {
-      const { password: _, ...safeUser } = pendingUser;
-      setUser(safeUser);
+    try {
+      const { data } = await api.post('/auth/verify-otp', { userId: pendingUserId, otp });
+      const { token, ...safeUser } = data;
+      localStorage.setItem('docshare_token', token);
       localStorage.setItem('docshare_user', JSON.stringify(safeUser));
+      setUser(safeUser);
       setMfaPending(false);
-      setPendingUser(null);
+      setPendingUserId(null);
       setLoading(false);
       return true;
+    } catch (err) {
+      setLoading(false);
+      throw new Error(err.response?.data?.message || 'Invalid OTP');
     }
-    setLoading(false);
-    throw new Error('Invalid OTP. Use 123456 for demo.');
   };
 
   const register = async ({ name, email, password, role }) => {
     setLoading(true);
-    await new Promise(r => setTimeout(r, 800));
-    const exists = MOCK_USERS.find(u => u.email === email);
-    if (exists) {
+    try {
+      const { data } = await api.post('/auth/register', { name, email, password, role });
       setLoading(false);
-      throw new Error('Email already registered');
+      return data;
+    } catch (err) {
+      setLoading(false);
+      throw new Error(err.response?.data?.message || 'Registration failed');
     }
-    const newUser = { id: Date.now(), name, email, role, avatar: name.slice(0, 2).toUpperCase(), mfaEnabled: false };
-    setUser(newUser);
-    localStorage.setItem('docshare_user', JSON.stringify(newUser));
-    setLoading(false);
-    return newUser;
   };
 
   const logout = () => {
     setUser(null);
     localStorage.removeItem('docshare_user');
+    localStorage.removeItem('docshare_token');
     toast.success('Logged out successfully');
   };
 
   const cancelMfa = () => {
     setMfaPending(false);
-    setPendingUser(null);
+    setPendingUserId(null);
   };
 
   return (

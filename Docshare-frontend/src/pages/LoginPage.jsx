@@ -3,11 +3,13 @@ import { Link, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Lock, Eye, EyeOff, Shield, ArrowLeft } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { useApp } from '../context/AppContext';
 import toast from 'react-hot-toast';
 import { InputField, Button } from '../components/ui/UIComponents';
 
 export default function LoginPage() {
   const { login, verifyMfa, mfaPending, cancelMfa, loading } = useAuth();
+  const { reloadAfterAuth } = useApp();
   const navigate = useNavigate();
   const [form, setForm] = useState({ email: '', password: '', otp: '', remember: false });
   const [showPassword, setShowPassword] = useState(false);
@@ -28,11 +30,8 @@ export default function LoginPage() {
     if (Object.keys(errs).length) { setErrors(errs); return; }
     setIsSubmitting(true);
     try {
-      const result = await login(form.email, form.password);
-      if (!result.mfaRequired) {
-        toast.success('Welcome back! Logged in successfully.');
-        navigate('/dashboard');
-      }
+      await login(form.email, form.password);
+      // Backend always requires OTP — mfaPending will be set to true in AuthContext
     } catch (err) {
       toast.error(err.message);
     } finally {
@@ -47,6 +46,7 @@ export default function LoginPage() {
     try {
       await verifyMfa(form.otp);
       toast.success('MFA verified! Welcome back.');
+      await reloadAfterAuth();
       navigate('/dashboard');
     } catch (err) {
       toast.error(err.message);
@@ -189,9 +189,9 @@ export default function LoginPage() {
           ) : (
             <>
               <h1 className="text-2xl font-bold text-[#0F172A] font-poppins">Two-Factor Authentication</h1>
-              <p className="text-slate-500 text-sm mt-1 mb-8">Enter the 6-digit code from your authenticator app</p>
+              <p className="text-slate-500 text-sm mt-1 mb-8">Enter the 6-digit code sent to your email address</p>
               <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-6">
-                <p className="text-blue-800 text-xs">Demo OTP: <strong>123456</strong></p>
+                <p className="text-blue-800 text-xs">Check your email inbox for the OTP code. It expires in 10 minutes.</p>
               </div>
               <form onSubmit={handleMfa} className="space-y-5">
                 <div>

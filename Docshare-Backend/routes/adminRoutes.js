@@ -1,5 +1,5 @@
 const express = require('express');
-const { getUsers, getAuditLogs } = require('../controllers/adminController');
+const { getUsers, getAuditLogs, updateUserStatus } = require('../controllers/adminController');
 const { protect } = require('../middleware/authMiddleware');
 const { authorizeRoles } = require('../middleware/roleMiddleware');
 
@@ -10,5 +10,6 @@ router.use(protect, authorizeRoles('Administrator'));
 
 router.get('/users', getUsers);
 router.get('/audit-logs', getAuditLogs);
+router.put('/users/:id/status', updateUserStatus);
 
 module.exports = router;
