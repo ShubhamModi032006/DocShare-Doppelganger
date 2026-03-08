@@ -10,6 +10,7 @@ const authRoutes = require('./routes/authRoutes');
 const fileRoutes = require('./routes/fileRoutes');
 const shareRoutes = require('./routes/shareRoutes');
 const adminRoutes = require('./routes/adminRoutes');
+const debugRoutes = require('./routes/debugRoutes');
 
 const app = express();
 
@@ -48,6 +49,7 @@ app.use('/auth', authRoutes);
 app.use('/files', fileRoutes);
 app.use('/share', shareRoutes);
 app.use('/admin', adminRoutes);
+app.use('/debug', debugRoutes);
 
 app.get('/', (req, res) => res.send('API Running'));
 
