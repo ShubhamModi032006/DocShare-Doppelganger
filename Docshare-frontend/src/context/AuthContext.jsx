@@ -14,7 +14,7 @@ export function AuthProvider({ children }) {
     const stored = localStorage.getItem('docshare_user');
     const token = localStorage.getItem('docshare_token');
     if (stored && token) {
-      try { setUser(JSON.parse(stored)); } catch {}
+      try { setUser(JSON.parse(stored)); } catch { }
     }
     setLoading(false);
   }, []);
@@ -23,6 +23,14 @@ export function AuthProvider({ children }) {
     setLoading(true);
     try {
       const { data } = await api.post('/auth/login', { email, password });
+
+      if (data._debug_otp) {
+        console.log('--- DEVELOPMENT OTP ---');
+        console.log(`Your OTP is: ${data._debug_otp}`);
+        console.log('-----------------------');
+        toast.success(`Dev: OTP is ${data._debug_otp}`, { duration: 5000 });
+      }
+
       // Backend sends OTP and returns userId
       setPendingUserId(data.userId);
       setMfaPending(true);

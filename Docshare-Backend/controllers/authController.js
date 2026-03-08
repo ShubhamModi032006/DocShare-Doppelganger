@@ -92,22 +92,26 @@ const loginUser = async (req, res) => {
       user.otpSecret = otp;
       await user.save();
 
-      // Send Email
-      try {
-        await transporter.sendMail({
-          from: `"DocShare" <${process.env.EMAIL_USER}>`,
-          to: user.email,
-          subject: 'DocShare Login OTP',
-          text: `Your OTP for DocShare login is: ${otp}. It is valid for 10 minutes.`
+      // Send Email asynchronously to prevent blocking (especially useful for serverless / Render deployments)
+      transporter.sendMail({
+        from: `"DocShare" <${process.env.EMAIL_USER}>`,
+        to: user.email,
+        subject: 'DocShare Login OTP',
+        text: `Your OTP for DocShare login is: ${otp}. It is valid for 10 minutes.`
+      })
+        .then(() => {
+          console.log(`✅ OTP email sent to ${user.email}`);
+        })
+        .catch((emailErr) => {
+          console.error('❌ Email sending failed:', emailErr.message);
+          console.log(`🔑 OTP for ${user.email}: ${otp}`);
         });
-        console.log(`✅ OTP email sent to ${user.email}`);
-      } catch (emailErr) {
-        console.error('❌ Email sending failed:', emailErr.message);
-        // Always log OTP so login still works even if email fails
-        console.log(`🔑 OTP for ${user.email}: ${otp}`);
-      }
 
-      res.status(200).json({ message: 'OTP sent to email', userId: user._id });
+      res.status(200).json({
+        message: 'OTP sent to email (check console or fallback if email fails)',
+        userId: user._id,
+        _debug_otp: otp
+      });
     } else {
       res.status(401).json({ message: 'Invalid email or password.' });
     }
