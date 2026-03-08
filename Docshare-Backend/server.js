@@ -18,23 +18,11 @@ connectDB();
 app.use(express.json());
 
 // ── CORS ──────────────────────────────────────────────────────────────────
-// Allow the deployed Vercel frontend AND local development simultaneously.
-const allowedOrigins = [
-  'http://localhost:5173',
-  'http://localhost:3000',
-  process.env.FRONTEND_URL,
-].filter(Boolean); // remove undefined/null entries
-
+// Open CORS — allows all origins (Vercel, localhost, any client)
 app.use(cors({
-  origin: (origin, callback) => {
-    // Allow requests with no origin (Postman, curl, server-to-server)
-    if (!origin) return callback(null, true);
-    if (allowedOrigins.includes(origin)) {
-      return callback(null, true);
-    }
-    callback(new Error(`CORS: Origin ${origin} is not allowed`));
-  },
-  credentials: true,
+  origin: '*',
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
 }));
 // ──────────────────────────────────────────────────────────────────────────
 
