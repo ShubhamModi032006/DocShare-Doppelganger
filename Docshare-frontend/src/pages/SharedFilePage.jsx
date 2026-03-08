@@ -1,16 +1,18 @@
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { useParams } from 'react-router-dom';
-import { Shield, Download, MessageSquare, Lock, Clock, Eye, Send, AlertTriangle, FileText, Mail, UserCheck } from 'lucide-react';
+import { Shield, Download, MessageSquare, Lock, Clock, Eye, Send, AlertTriangle, Mail, UserCheck } from 'lucide-react';
 import { Button, Badge } from '../components/ui/UIComponents';
 import { formatDate, formatFileSize } from '../data/mockData';
+import { useAuth } from '../context/AuthContext';
 import api from '../utils/api';
 import toast from 'react-hot-toast';
 
 export default function SharedFilePage() {
   const { token } = useParams();
+  const { user } = useAuth(); // Get logged-in user to auto-fill email
   const [linkData, setLinkData] = useState(null); // { link, file }
-  const [fetchStatus, setFetchStatus] = useState('loading'); // loading | ok | notfound | expired | requires_email
+  const [fetchStatus, setFetchStatus] = useState('loading'); // loading | ok | notfound | expired | requires_email | access_denied
   const [comment, setComment] = useState('');
   const [comments, setComments] = useState([]);
   const [emailInput, setEmailInput] = useState('');
@@ -29,9 +31,27 @@ export default function SharedFilePage() {
       const body = err.response?.data;
       if (status === 401 && body?.requiresEmail) {
         setRestrictedFileName(body.fileName || '');
+        // ── If the user is already logged in, silently retry with their email ──
+        if (user?.email && !email) {
+          try {
+            const retryUrl = `/share/token/${token}?email=${encodeURIComponent(user.email)}`;
+            const { data: retryData } = await api.get(retryUrl);
+            setLinkData(retryData);
+            setFetchStatus('ok');
+            return;
+          } catch (retryErr) {
+            const retryStatus = retryErr.response?.status;
+            if (retryStatus === 403) {
+              // Their email doesn't match — show a clear access denied screen
+              setFetchStatus('access_denied');
+              return;
+            }
+          }
+        }
+        // Not logged in (or retry failed) — show the email input form
         setFetchStatus('requires_email');
       } else if (status === 403 && email) {
-        // Wrong email provided
+        // Wrong email provided via the form
         setEmailError('Access denied. This link was not shared with you.');
         setEmailChecking(false);
       } else if (status === 403) {
@@ -46,8 +66,8 @@ export default function SharedFilePage() {
 
   useEffect(() => {
     fetchLink();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token, user]);
 
   const handleEmailSubmit = async (e) => {
     e.preventDefault();
@@ -94,6 +114,22 @@ export default function SharedFilePage() {
           <h1 className="text-2xl font-bold text-[#0F172A] font-poppins mb-3">This secure link has expired.</h1>
           <p className="text-slate-500 mb-6">
             The access window for this document has closed or the link has been revoked. Contact the sender for a new link.
+          </p>
+        </motion.div>
+      </div>
+    );
+  }
+
+  if (fetchStatus === 'access_denied') {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center px-4">
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="text-center max-w-md">
+          <div className="w-20 h-20 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-6">
+            <Lock className="w-10 h-10 text-red-400" />
+          </div>
+          <h1 className="text-2xl font-bold text-[#0F172A] font-poppins mb-3">Access Denied</h1>
+          <p className="text-slate-500">
+            This link was not shared with <strong>{user?.email}</strong>. Please contact the sender.
           </p>
         </motion.div>
       </div>
@@ -158,27 +194,40 @@ export default function SharedFilePage() {
 
   const { link, file } = linkData;
 
+  // Open the file in a new tab.
+  // The backend now preserves the original filename (e.g. portfolio_abc.pdf)
+  // in the Cloudinary URL, so browsers render PDFs natively without downloading.
   const handleView = () => {
-    if (file?.fileUrl) {
-      window.open(file.fileUrl, '_blank', 'noopener,noreferrer');
-    } else {
-      toast.success('File opened securely');
-    }
+    if (!file?.fileUrl) { toast.error('File URL not available'); return; }
+    window.open(file.fileUrl, '_blank', 'noopener,noreferrer');
   };
 
+  // Download is ONLY allowed when permission === 'download'
   const handleDownload = async () => {
+    if (link.permission !== 'download') {
+      toast.error('You do not have download permission for this file.');
+      return;
+    }
     if (!file?.fileUrl) { toast.error('File URL not available'); return; }
+    const fileName = file.name || link.fileName || 'download';
     try {
-      const response = await fetch(file.fileUrl);
+      // Use Cloudinary's fl_attachment transformation so the browser receives
+      // Content-Disposition: attachment; filename="<original-name>.<ext>"
+      const sanitized = fileName.replace(/[^a-zA-Z0-9._-]/g, '_');
+      const downloadUrl = file.fileUrl.replace(
+        /\/upload\//,
+        `/upload/fl_attachment:${sanitized}/`
+      );
+      const response = await fetch(downloadUrl);
       const blob = await response.blob();
-      const url = window.URL.createObjectURL(blob);
+      const blobUrl = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
-      a.href = url;
-      a.download = file.name || link.fileName;
+      a.href = blobUrl;
+      a.download = fileName;
       document.body.appendChild(a);
       a.click();
       a.remove();
-      window.URL.revokeObjectURL(url);
+      window.URL.revokeObjectURL(blobUrl);
       toast.success('Download started');
     } catch {
       toast.error('Download failed');
@@ -254,43 +303,33 @@ export default function SharedFilePage() {
             </div>
           </div>
 
-          {/* Actions */}
+          {/* Actions — strictly permission-gated */}
           <div className="p-6 bg-gray-50/50">
             <div className="flex flex-wrap gap-3">
+              {/* View: always visible — scrolls to inline preview, never opens raw URL */}
               <Button icon={Eye} onClick={handleView}>View Document</Button>
+              {/* Download: ONLY shown when permission is explicitly 'download' */}
               {link.permission === 'download' && (
                 <Button variant="secondary" icon={Download} onClick={handleDownload}>Download</Button>
               )}
             </div>
+            {/* Permission badge hint */}
+            {link.permission === 'view' && (
+              <p className="text-xs text-slate-400 mt-3 flex items-center gap-1.5">
+                <Shield className="w-3.5 h-3.5" />
+                View only — downloading is not permitted for this link.
+              </p>
+            )}
+            {link.permission === 'comment' && (
+              <p className="text-xs text-slate-400 mt-3 flex items-center gap-1.5">
+                <Shield className="w-3.5 h-3.5" />
+                View &amp; comment only — downloading is not permitted.
+              </p>
+            )}
           </div>
         </motion.div>
 
-        {/* File preview placeholder */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.1 }}
-          className="bg-white rounded-2xl border border-gray-100 shadow-sm mb-6 p-6"
-        >
-          <h2 className="font-semibold text-[#0F172A] mb-4 flex items-center gap-2">
-            <FileText className="w-4 h-4 text-[#C9A227]" /> Document Preview
-          </h2>
-          <div className="bg-gray-100 rounded-xl h-72 flex items-center justify-center">
-            <div className="text-center">
-              <div className="w-16 h-16 bg-white rounded-xl flex items-center justify-center mx-auto mb-4 shadow-sm text-3xl">
-                {link.fileName.endsWith('.pdf') ? '📄' : '📝'}
-              </div>
-              <p className="text-slate-500 text-sm font-medium">{link.fileName}</p>
-              <p className="text-slate-400 text-xs mt-1">Click "View Document" to open the secure viewer</p>
-              <button
-                onClick={handleView}
-                className="mt-4 btn-gold px-4 py-2 rounded-lg text-sm font-semibold text-[#0F172A] inline-flex items-center gap-2"
-              >
-                <Eye className="w-4 h-4" /> Open Secure Viewer
-              </button>
-            </div>
-          </div>
-        </motion.div>
+
 
         {/* Comments section — only if permission allows */}
         {link.permission === 'comment' && (
