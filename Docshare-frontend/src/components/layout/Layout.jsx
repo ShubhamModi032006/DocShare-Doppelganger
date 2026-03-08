@@ -60,11 +60,10 @@ export default function Layout({ children }) {
               key={item.path}
               to={item.path}
               onClick={() => setMobileOpen(false)}
-              className={`flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200 group ${
-                isActive
+              className={`flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200 group ${isActive
                   ? 'sidebar-active font-semibold'
                   : 'text-slate-400 hover:text-white hover:bg-white/[0.06]'
-              }`}
+                }`}
             >
               <item.icon className={`w-5 h-5 flex-shrink-0 ${isActive ? 'text-[#C9A227]' : ''}`} />
               {sidebarOpen && (
@@ -111,23 +110,25 @@ export default function Layout({ children }) {
   return (
     <div className="flex h-screen bg-gray-50 overflow-hidden">
       {/* Desktop Sidebar */}
-      <motion.aside
-        animate={{ width: sidebarOpen ? 240 : 72 }}
-        transition={{ duration: 0.3, ease: 'easeInOut' }}
-        className="hidden lg:flex flex-col flex-shrink-0 bg-[#0F172A] overflow-hidden relative z-20 border-r border-white/[0.06]"
-        style={{ minWidth: sidebarOpen ? 240 : 72 }}
-      >
-        <SidebarContent />
+      <div className="hidden lg:flex flex-shrink-0 relative z-20">
+        <motion.aside
+          animate={{ width: sidebarOpen ? 240 : 72 }}
+          transition={{ duration: 0.3, ease: 'easeInOut' }}
+          className="flex flex-col bg-[#0F172A] overflow-hidden border-r border-white/[0.06]"
+          style={{ minWidth: sidebarOpen ? 240 : 72 }}
+        >
+          <SidebarContent />
+        </motion.aside>
         {/* Collapse toggle */}
         <button
           onClick={() => setSidebarOpen(!sidebarOpen)}
-          className="absolute -right-3 top-1/2 -translate-y-1/2 w-6 h-6 bg-[#C9A227] rounded-full flex items-center justify-center shadow-md z-10 hover:scale-110 transition-transform"
+          className="absolute -right-3 top-1/2 -translate-y-1/2 w-6 h-6 bg-[#C9A227] rounded-full flex items-center justify-center shadow-md z-30 hover:scale-110 transition-transform"
         >
           <motion.div animate={{ rotate: sidebarOpen ? 0 : 180 }}>
             <ChevronLeft className="w-3 h-3 text-[#0F172A]" />
           </motion.div>
         </button>
-      </motion.aside>
+      </div>
 
       {/* Mobile sidebar overlay */}
       <AnimatePresence>
