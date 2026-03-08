@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { Share2, Copy, RotateCcw, Clock, Eye, Download, MessageSquare, CheckCircle, Search, ExternalLink } from 'lucide-react';
+import { Share2, Copy, RotateCcw, Clock, Eye, Download, MessageSquare, CheckCircle, Search, ExternalLink, Mail } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { useAuth } from '../context/AuthContext';
 import { PageHeader, Badge, Card, EmptyState } from '../components/ui/UIComponents';
@@ -12,15 +12,14 @@ const PERM_ICONS = { view: Eye, download: Download, comment: MessageSquare };
 
 export default function LinksPage() {
   const { user } = useAuth();
-  const { links, revokeLink, addAuditLog } = useApp();
+  const { links, revokeLink } = useApp();
   const navigate = useNavigate();
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [copiedId, setCopiedId] = useState(null);
 
-  const myLinks = user?.role === 'Administrator'
-    ? links
-    : links.filter(l => l.createdBy === user?.name);
+  // AppContext's getMyLinks already returns role-filtered links from backend
+  const myLinks = links;
 
   const displayLinks = myLinks
     .filter(l => l.fileName.toLowerCase().includes(search.toLowerCase()))
@@ -38,10 +37,13 @@ export default function LinksPage() {
     setTimeout(() => setCopiedId(null), 2000);
   };
 
-  const handleRevoke = (link) => {
-    revokeLink(link.id);
-    addAuditLog({ user: user?.name, fileId: link.fileId, fileName: link.fileName, action: 'Link revoked', ip: '127.0.0.1' });
-    toast.success('Link revoked successfully');
+  const handleRevoke = async (link) => {
+    try {
+      await revokeLink(link.id);
+      toast.success('Link revoked successfully');
+    } catch {
+      toast.error('Failed to revoke link');
+    }
   };
 
   const getLinkStatus = (link) => {
@@ -137,6 +139,11 @@ export default function LinksPage() {
                           <span className="flex items-center gap-1"><Clock className="w-3 h-3" /> {expired ? 'Expired' : `Expires ${formatDate(link.expiresAt)}`}</span>
                           <span className="flex items-center gap-1"><Eye className="w-3 h-3" /> {link.views} views</span>
                           <span>by {link.createdBy}</span>
+                          {link.recipientEmail && (
+                            <span className="flex items-center gap-1 text-amber-600 font-medium">
+                              <Mail className="w-3 h-3" /> {link.recipientEmail}
+                            </span>
+                          )}
                         </div>
                       </div>
                     </div>

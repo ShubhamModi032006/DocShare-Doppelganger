@@ -10,7 +10,8 @@ const SharedLinkSchema = new mongoose.Schema({
     createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
     status: { type: String, enum: ['active', 'expired', 'revoked'], default: 'active' },
     views: { type: Number, default: 0 },
-    password: { type: String } // Optional protected password
+    password: { type: String }, // Optional protected password
+    recipientEmail: { type: String, default: null } // If set, only this email can access the link
 });
 
 module.exports = mongoose.model('SharedLink', SharedLinkSchema);

@@ -1,11 +1,12 @@
 import { useState, useCallback } from 'react';
 import { useDropzone } from 'react-dropzone';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Upload, File, X, Shield, Clock, Eye, Download, MessageSquare, Copy, CheckCircle, Calendar } from 'lucide-react';
+import { Upload, X, Shield, Clock, Eye, Download, MessageSquare, Copy, CheckCircle, Calendar, Mail, UserCheck } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { useAuth } from '../context/AuthContext';
 import { Button, Card, PageHeader, Badge } from '../components/ui/UIComponents';
 import { formatFileSize } from '../data/mockData';
+import api from '../utils/api';
 import toast from 'react-hot-toast';
 
 const PERMISSIONS = [
@@ -22,11 +23,12 @@ const EXPIRATIONS = [
 
 export default function UploadPage() {
   const { user } = useAuth();
-  const { addFile, addLink, addAuditLog } = useApp();
+  const { addFile, addLink } = useApp();
   const [droppedFile, setDroppedFile] = useState(null);
   const [permission, setPermission] = useState('view');
   const [expiration, setExpiration] = useState('24h');
   const [customDate, setCustomDate] = useState('');
+  const [recipientEmail, setRecipientEmail] = useState('');
   const [step, setStep] = useState(1); // 1=upload, 2=config, 3=success
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
@@ -68,44 +70,44 @@ export default function UploadPage() {
   const handleUpload = async () => {
     if (!droppedFile) return;
     setUploading(true);
-    // Simulate upload with progress
-    for (let i = 0; i <= 100; i += 10) {
-      await new Promise(r => setTimeout(r, 80));
-      setUploadProgress(i);
+    setUploadProgress(0);
+    try {
+      // Step 1: Upload file to backend
+      const formData = new FormData();
+      formData.append('file', droppedFile);
+      const ext = droppedFile.name.split('.').pop().toLowerCase();
+      formData.append('tags', JSON.stringify([ext.toUpperCase()]));
+
+      // Simulate progress while uploading
+      const progressInterval = setInterval(() => {
+        setUploadProgress(prev => (prev < 80 ? prev + 10 : prev));
+      }, 200);
+
+      const { data: uploadedFile } = await api.post('/files/upload', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      clearInterval(progressInterval);
+      setUploadProgress(90);
+
+      // Step 2: Create secure share link
+      const { data: newLink } = await api.post('/share/create-link', {
+        fileId: uploadedFile.id,
+        permission,
+        expiresAt: getExpiryDate(),
+        recipientEmail: recipientEmail.trim() || undefined,
+      });
+      setUploadProgress(100);
+
+      addFile(uploadedFile);
+      addLink(newLink);
+      setGeneratedLink(newLink);
+      setStep(3);
+      toast.success('File uploaded and secure link generated!');
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Upload failed. Please try again.');
+    } finally {
+      setUploading(false);
     }
-    const ext = droppedFile.name.split('.').pop().toLowerCase();
-    const token = Math.random().toString(36).slice(2, 11);
-    const newFile = {
-      id: 'f' + Date.now(),
-      name: droppedFile.name,
-      size: droppedFile.size,
-      type: ext,
-      uploadedBy: user.name,
-      uploadedById: user.id,
-      uploadedAt: new Date().toISOString(),
-      status: 'active',
-      sharedWith: [],
-      tags: [ext.toUpperCase()],
-    };
-    const newLink = {
-      id: 'l' + Date.now(),
-      fileId: newFile.id,
-      fileName: newFile.name,
-      token,
-      url: `${window.location.origin}/shared/${token}`,
-      permission,
-      expiresAt: getExpiryDate(),
-      createdBy: user.name,
-      status: 'active',
-      views: 0,
-    };
-    addFile(newFile);
-    addLink(newLink);
-    addAuditLog({ user: user.name, fileId: newFile.id, fileName: newFile.name, action: 'File uploaded', ip: '127.0.0.1' });
-    setGeneratedLink(newLink);
-    setStep(3);
-    setUploading(false);
-    toast.success('File uploaded and secure link generated!');
   };
 
   const copyLink = () => {
@@ -254,6 +256,30 @@ export default function UploadPage() {
               )}
             </Card>
 
+            {/* Recipient restriction */}
+            <Card>
+              <h3 className="font-semibold text-[#0F172A] mb-1 flex items-center gap-2">
+                <UserCheck className="w-4 h-4 text-[#C9A227]" /> Restrict Access (Optional)
+              </h3>
+              <p className="text-xs text-slate-500 mb-3">If set, only the specified email address can open this link.</p>
+              <div className="flex items-center gap-2">
+                <Mail className="w-4 h-4 text-slate-400 flex-shrink-0" />
+                <input
+                  type="email"
+                  placeholder="client@example.com  (leave blank for public link)"
+                  value={recipientEmail}
+                  onChange={e => setRecipientEmail(e.target.value)}
+                  className="input-field flex-1"
+                />
+              </div>
+              {recipientEmail.trim() && (
+                <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mt-2 flex items-center gap-1.5">
+                  <Shield className="w-3.5 h-3.5" />
+                  This link will only be accessible by <strong>{recipientEmail.trim()}</strong>
+                </p>
+              )}
+            </Card>
+
             {uploading && (
               <Card>
                 <div className="space-y-2">
@@ -322,6 +348,12 @@ export default function UploadPage() {
                   <p className="text-xs font-semibold text-green-600 mt-0.5">AES-256</p>
                 </div>
               </div>
+              {generatedLink.recipientEmail && (
+                <div className="mt-3 flex items-center gap-2 px-3 py-2.5 bg-amber-50 border border-amber-200 rounded-xl">
+                  <UserCheck className="w-4 h-4 text-amber-600 flex-shrink-0" />
+                  <span className="text-xs text-amber-800">Restricted to: <strong>{generatedLink.recipientEmail}</strong></span>
+                </div>
+              )}
             </Card>
 
             <div className="flex gap-3">
