@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { Files, Search, Download, Trash2, Share2, Eye, Filter, ExternalLink } from 'lucide-react';
+import { Files, Search, Download, Trash2, Share2, Eye, Filter, ExternalLink, RefreshCw } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { useAuth } from '../context/AuthContext';
 import { PageHeader, Badge, Button, Card, EmptyState } from '../components/ui/UIComponents';
@@ -10,13 +10,20 @@ import { useNavigate } from 'react-router-dom';
 
 export default function FilesPage() {
   const { user } = useAuth();
-  const { files, deleteFile, sharedWithMe } = useApp();
+  const { files, deleteFile, sharedWithMe, fetchSharedWithMe } = useApp();
   const navigate = useNavigate();
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState('all'); // all | pdf | docx | images
   const [sortBy, setSortBy] = useState('date'); // date | name | size
   const [tab, setTab] = useState('my'); // my | shared
   const [confirmDelete, setConfirmDelete] = useState(null);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const handleRefreshShared = async () => {
+    setRefreshing(true);
+    await fetchSharedWithMe();
+    setRefreshing(false);
+  };
 
   // AppContext already returns role-filtered files from the backend
   const myFiles = files;
@@ -72,7 +79,17 @@ export default function FilesPage() {
         title="File Management"
         subtitle="Manage all your uploaded and shared documents"
         action={
-          (user?.role !== 'Client') && (
+          user?.role === 'Client' ? (
+            <button
+              onClick={handleRefreshShared}
+              disabled={refreshing}
+              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-gray-100 hover:bg-gray-200 text-slate-600 text-sm font-medium transition-all border border-gray-200"
+              title="Refresh shared files"
+            >
+              <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
+              {refreshing ? 'Refreshing...' : 'Refresh'}
+            </button>
+          ) : (
             <Button icon={Files} onClick={() => navigate('/upload')}>Upload New File</Button>
           )
         }
@@ -88,9 +105,8 @@ export default function FilesPage() {
             <button
               key={t.id}
               onClick={() => setTab(t.id)}
-              className={`px-4 py-2 rounded-lg text-sm font-medium transition-all duration-300 ${
-                tab === t.id ? 'bg-white text-[#0F172A] shadow-sm' : 'text-slate-500 hover:text-[#0F172A]'
-              }`}
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition-all duration-300 ${tab === t.id ? 'bg-white text-[#0F172A] shadow-sm' : 'text-slate-500 hover:text-[#0F172A]'
+                }`}
             >
               {t.label} <span className="ml-1 text-xs text-slate-400">({t.count})</span>
             </button>
