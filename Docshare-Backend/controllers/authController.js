@@ -44,8 +44,7 @@ const registerUser = async (req, res) => {
       return res.status(400).json({ message: 'An account with this email already exists.' });
     }
 
-    const salt = await bcrypt.genSalt(10);
-    const hashedPassword = await bcrypt.hash(password, salt);
+    const hashedPassword = await bcrypt.hash(password, 8);
 
     // Create Avatar initials from name
     const initials = name.trim().split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
@@ -79,40 +78,40 @@ const loginUser = async (req, res) => {
     }
     // ─────────────────────────────────────────────────────────────
 
-    const user = await User.findOne({ email: email.toLowerCase().trim() });
+    // .lean() returns a plain JS object — faster than a full Mongoose document
+    const user = await User.findOne({ email: email.toLowerCase().trim() }).lean();
 
-    if (user && (await bcrypt.compare(password, user.password))) {
-      // Check if user is active
-      if (user.status === 'inactive') {
-        return res.status(403).json({ message: 'Your account has been deactivated. Contact admin.' });
-      }
-
-      // Generate OTP
-      const otp = generateOTP();
-      user.otpSecret = otp;
-      await user.save();
-
-      // Send Email
-      try {
-        await transporter.sendMail({
-          from: `"DocShare" <${process.env.EMAIL_USER}>`,
-          to: user.email,
-          subject: 'DocShare Login OTP',
-          text: `Your OTP for DocShare login is: ${otp}. It is valid for 10 minutes.`
-        });
-        console.log(`✅ OTP email sent to ${user.email}`);
-      } catch (emailErr) {
-        console.error('❌ Email sending failed:', emailErr.message);
-        return res.status(500).json({ message: 'Failed to send OTP email. Please try again later.' });
-      }
-
-      res.status(200).json({
-        message: 'OTP sent to your email.',
-        userId: user._id
-      });
-    } else {
-      res.status(401).json({ message: 'Invalid email or password.' });
+    if (!user || !(await bcrypt.compare(password, user.password))) {
+      return res.status(401).json({ message: 'Invalid email or password.' });
     }
+
+    if (user.status === 'inactive') {
+      return res.status(403).json({ message: 'Your account has been deactivated. Contact admin.' });
+    }
+
+    const otp = generateOTP();
+
+    // Run DB write and email send in parallel to save a full round-trip
+    const [, emailResult] = await Promise.allSettled([
+      User.updateOne({ _id: user._id }, { $set: { otpSecret: otp } }),
+      transporter.sendMail({
+        from: `"DocShare" <${process.env.EMAIL_USER}>`,
+        to: user.email,
+        subject: 'DocShare Login OTP',
+        text: `Your OTP for DocShare login is: ${otp}. It is valid for 10 minutes.`
+      })
+    ]);
+
+    if (emailResult.status === 'rejected') {
+      console.error('❌ Email sending failed:', emailResult.reason?.message);
+      return res.status(500).json({ message: 'Failed to send OTP email. Please try again later.' });
+    }
+
+    console.log(`✅ OTP email sent to ${user.email}`);
+    res.status(200).json({
+      message: 'OTP sent to your email.',
+      userId: user._id
+    });
   } catch (error) {
     console.error('Login error:', error.message);
     res.status(500).json({ message: 'Server error. Please try again.', error: error.message });
@@ -129,24 +128,28 @@ const verifyOTP = async (req, res) => {
     }
     // ─────────────────────────────────────────────────────────────
 
-    const user = await User.findById(userId);
+    // Verify OTP first with a lean read, then do a single targeted update
+    const existing = await User.findById(userId).select('otpSecret status').lean();
 
-    if (!user) {
+    if (!existing) {
       return res.status(404).json({ message: 'User not found. Please log in again.' });
     }
 
-    if (user.otpSecret === String(otp)) {
-      user.otpSecret = undefined; // Clear OTP after use
-      user.mfaEnabled = true;
-      await user.save();
-
-      res.status(200).json({
-        ...formatUserResponse(user),
-        token: generateToken(user._id)
-      });
-    } else {
-      res.status(401).json({ message: 'Invalid or expired OTP. Please try again.' });
+    if (existing.otpSecret !== String(otp)) {
+      return res.status(401).json({ message: 'Invalid or expired OTP. Please try again.' });
     }
+
+    // Atomically clear OTP and set mfaEnabled, return updated doc
+    const user = await User.findByIdAndUpdate(
+      userId,
+      { $unset: { otpSecret: 1 }, $set: { mfaEnabled: true } },
+      { new: true, lean: true }
+    );
+
+    res.status(200).json({
+      ...formatUserResponse(user),
+      token: generateToken(user._id)
+    });
   } catch (error) {
     console.error('OTP error:', error.message);
     res.status(500).json({ message: 'Server error. Please try again.', error: error.message });
