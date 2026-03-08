@@ -8,16 +8,16 @@ import { formatDate, formatFileSize, isExpired, FILE_ICONS } from '../data/mockD
 
 export default function DashboardPage() {
   const { user } = useAuth();
-  const { files, links, auditLogs } = useApp();
+  const { files, links, auditLogs, sharedWithMe } = useApp();
 
-  const myFiles = user?.role === 'Client'
-    ? files.filter(f => f.sharedWith.includes(user.name))
-    : files.filter(f => user?.role === 'Administrator' ? true : f.uploadedById === 2);
-
+  // AppContext already filters files per role (admin=all, partner/client=own)
+  const myFiles = files;
+  // For Clients, use sharedWithMe as the primary file list
+  const displayFiles = user?.role === 'Client' ? sharedWithMe : myFiles;
   const activeLinks = links.filter(l => l.status === 'active' && !isExpired(l.expiresAt));
   const expiredLinks = links.filter(l => l.status === 'expired' || isExpired(l.expiresAt));
   const recentActivity = [...auditLogs].slice(0, 5);
-  const totalSize = myFiles.reduce((acc, f) => acc + f.size, 0);
+  const totalSize = myFiles.reduce((acc, f) => acc + (f.size || 0), 0);
 
   const actionItems = [
     { icon: Upload, label: 'Upload File', path: '/upload', color: 'gold', desc: 'Upload a new document', roles: ['Administrator', 'Partner'] },
@@ -50,7 +50,7 @@ export default function DashboardPage() {
 
       {/* Stats */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-        <StatCard icon={Files} label="Total Files" value={myFiles.length} subtext={formatFileSize(totalSize) + ' total'} color="gold" delay={0} />
+        <StatCard icon={Files} label={user?.role === 'Client' ? 'Shared with Me' : 'Total Files'} value={user?.role === 'Client' ? sharedWithMe.length : myFiles.length} subtext={user?.role === 'Client' ? 'Files shared with you' : formatFileSize(totalSize) + ' total'} color="gold" delay={0} />
         <StatCard icon={Share2} label="Active Links" value={activeLinks.length} subtext="Links currently active" color="blue" delay={0.1} />
         <StatCard icon={Clock} label="Expired Links" value={expiredLinks.length} subtext="Links that have expired" color="red" delay={0.2} />
         <StatCard icon={TrendingUp} label="Total Activity" value={auditLogs.length} subtext="Events recorded" color="green" delay={0.3} />
@@ -88,26 +88,38 @@ export default function DashboardPage() {
         <div className="lg:col-span-2">
           <Card padding={false}>
             <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
-              <h2 className="font-semibold text-[#0F172A]">Recent Files</h2>
+              <h2 className="font-semibold text-[#0F172A]">{user?.role === 'Client' ? 'Shared with Me' : 'Recent Files'}</h2>
               <Link to="/files" className="text-sm text-[#C9A227] hover:underline">View all →</Link>
             </div>
             <div className="divide-y divide-gray-50">
-              {myFiles.slice(0, 5).map((file) => (
-                <div key={file.id} className="flex items-center gap-3 px-5 py-3.5 hover:bg-gray-50 transition-colors">
-                  <div className="w-9 h-9 rounded-lg bg-amber-50 flex items-center justify-center text-lg flex-shrink-0">
-                    {FILE_ICONS[file.type] || FILE_ICONS.default}
+              {displayFiles.slice(0, 5).map((item) => {
+                const fileName = user?.role === 'Client' ? item.fileName : item.name;
+                const fileType = user?.role === 'Client' ? item.file?.type : item.type;
+                const fileSize = user?.role === 'Client' ? item.file?.size : item.size;
+                const fileDate = user?.role === 'Client' ? item.file?.uploadedAt : item.uploadedAt;
+                const fileStatus = user?.role === 'Client' ? item.status : item.status;
+                const openUrl = user?.role === 'Client' ? item.url : null;
+                return (
+                  <div
+                    key={item.id}
+                    className={`flex items-center gap-3 px-5 py-3.5 hover:bg-gray-50 transition-colors ${openUrl ? 'cursor-pointer' : ''}`}
+                    onClick={() => openUrl && window.open(openUrl, '_blank', 'noopener,noreferrer')}
+                  >
+                    <div className="w-9 h-9 rounded-lg bg-amber-50 flex items-center justify-center text-lg flex-shrink-0">
+                      {FILE_ICONS[fileType] || FILE_ICONS.default}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-[#0F172A] truncate">{fileName}</p>
+                      <p className="text-xs text-slate-400">{formatFileSize(fileSize)} • {formatDate(fileDate)}</p>
+                    </div>
+                    <Badge variant={fileStatus}>{fileStatus}</Badge>
                   </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-[#0F172A] truncate">{file.name}</p>
-                    <p className="text-xs text-slate-400">{formatFileSize(file.size)} • {formatDate(file.uploadedAt)}</p>
-                  </div>
-                  <Badge variant={file.status}>{file.status}</Badge>
-                </div>
-              ))}
-              {myFiles.length === 0 && (
+                );
+              })}
+              {displayFiles.length === 0 && (
                 <div className="px-5 py-10 text-center">
                   <FileText className="w-8 h-8 text-slate-300 mx-auto mb-2" />
-                  <p className="text-sm text-slate-400">No files yet</p>
+                  <p className="text-sm text-slate-400">{user?.role === 'Client' ? 'No files shared with you yet' : 'No files yet'}</p>
                 </div>
               )}
             </div>

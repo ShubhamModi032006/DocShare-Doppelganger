@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { Files, Search, Download, Trash2, Share2, Eye, Filter, ArrowUpDown } from 'lucide-react';
+import { Files, Search, Download, Trash2, Share2, Eye, Filter, ExternalLink } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { useAuth } from '../context/AuthContext';
 import { PageHeader, Badge, Button, Card, EmptyState } from '../components/ui/UIComponents';
@@ -10,7 +10,7 @@ import { useNavigate } from 'react-router-dom';
 
 export default function FilesPage() {
   const { user } = useAuth();
-  const { files, deleteFile, addAuditLog } = useApp();
+  const { files, deleteFile, sharedWithMe } = useApp();
   const navigate = useNavigate();
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState('all'); // all | pdf | docx | images
@@ -18,15 +18,30 @@ export default function FilesPage() {
   const [tab, setTab] = useState('my'); // my | shared
   const [confirmDelete, setConfirmDelete] = useState(null);
 
-  const myFiles = user?.role === 'Client'
-    ? files.filter(f => f.sharedWith.includes(user.name))
-    : user?.role === 'Administrator'
-      ? files
-      : files.filter(f => f.uploadedById === user?.id);
+  // AppContext already returns role-filtered files from the backend
+  const myFiles = files;
+  const sharedFiles = files.filter(f => f.sharedWith && f.sharedWith.length > 0);
 
-  const sharedFiles = files.filter(f => f.sharedWith.includes(user?.name));
+  // Transform sharedWithMe links into a display-compatible shape for Clients
+  const sharedWithMeFiles = sharedWithMe.map(item => ({
+    id: item.id,
+    name: item.fileName,
+    size: item.file?.size || 0,
+    type: item.file?.type || '',
+    status: item.status,
+    tags: item.file?.tags || [],
+    uploadedBy: item.sharedBy,
+    uploadedAt: item.file?.uploadedAt || item.expiresAt,
+    fileUrl: item.file?.fileUrl,
+    url: item.url,
+    permission: item.permission,
+    expiresAt: item.expiresAt,
+    isSharedLink: true,
+  }));
 
-  const displayFiles = (tab === 'my' ? myFiles : sharedFiles)
+  const sourceFiles = user?.role === 'Client' ? sharedWithMeFiles : (tab === 'my' ? myFiles : sharedFiles);
+
+  const displayFiles = sourceFiles
     .filter(f => f.name.toLowerCase().includes(search.toLowerCase()))
     .filter(f => filter === 'all' ? true : filter === 'images' ? ['png', 'jpg', 'jpeg'].includes(f.type) : f.type === filter)
     .sort((a, b) => {
@@ -35,11 +50,15 @@ export default function FilesPage() {
       return new Date(b.uploadedAt) - new Date(a.uploadedAt);
     });
 
-  const handleDelete = (file) => {
-    deleteFile(file.id);
-    addAuditLog({ user: user.name, fileId: file.id, fileName: file.name, action: 'File deleted', ip: '127.0.0.1' });
-    toast.success('File deleted successfully');
-    setConfirmDelete(null);
+  const handleDelete = async (file) => {
+    try {
+      await deleteFile(file.id);
+      toast.success('File deleted successfully');
+    } catch {
+      toast.error('Failed to delete file');
+    } finally {
+      setConfirmDelete(null);
+    }
   };
 
   const handleShare = (file) => {
@@ -59,23 +78,25 @@ export default function FilesPage() {
         }
       />
 
-      {/* Tabs */}
-      <div className="flex gap-1 mb-6 bg-gray-100/70 rounded-xl p-1 w-fit border border-gray-200/50">
-        {[
-          { id: 'my', label: user?.role === 'Client' ? 'Shared with Me' : 'My Files', count: myFiles.length },
-          ...(user?.role !== 'Client' ? [{ id: 'shared', label: 'Shared', count: sharedFiles.length }] : []),
-        ].map(t => (
-          <button
-            key={t.id}
-            onClick={() => setTab(t.id)}
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all duration-300 ${
-              tab === t.id ? 'bg-white text-[#0F172A] shadow-sm' : 'text-slate-500 hover:text-[#0F172A]'
-            }`}
-          >
-            {t.label} <span className="ml-1 text-xs text-slate-400">({t.count})</span>
-          </button>
-        ))}
-      </div>
+      {/* Tabs — hidden for Clients (they always see Shared with Me) */}
+      {user?.role !== 'Client' && (
+        <div className="flex gap-1 mb-6 bg-gray-100/70 rounded-xl p-1 w-fit border border-gray-200/50">
+          {[
+            { id: 'my', label: 'My Files', count: myFiles.length },
+            { id: 'shared', label: 'Shared', count: sharedFiles.length },
+          ].map(t => (
+            <button
+              key={t.id}
+              onClick={() => setTab(t.id)}
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition-all duration-300 ${
+                tab === t.id ? 'bg-white text-[#0F172A] shadow-sm' : 'text-slate-500 hover:text-[#0F172A]'
+              }`}
+            >
+              {t.label} <span className="ml-1 text-xs text-slate-400">({t.count})</span>
+            </button>
+          ))}
+        </div>
+      )}
 
       <Card padding={false}>
         {/* Toolbar */}
@@ -166,25 +187,38 @@ export default function FilesPage() {
                     </td>
                     <td className="px-5 py-4">
                       <div className="flex items-center justify-end gap-1">
-                        <button title="View" className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all">
-                          <Eye className="w-4 h-4" />
-                        </button>
-                        <button title="Download" className="p-1.5 text-slate-400 hover:text-green-600 hover:bg-green-50 rounded-lg transition-all">
-                          <Download className="w-4 h-4" />
-                        </button>
-                        {user?.role !== 'Client' && (
-                          <button title="Share" onClick={() => handleShare(file)} className="p-1.5 text-slate-400 hover:text-[#C9A227] hover:bg-amber-50 rounded-lg transition-all">
-                            <Share2 className="w-4 h-4" />
-                          </button>
-                        )}
-                        {(user?.role === 'Administrator' || file.uploadedById === user?.id) && (
+                        {file.isSharedLink ? (
+                          // Client: open the secure shared link
                           <button
-                            title="Delete"
-                            onClick={() => setConfirmDelete(file)}
-                            className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all"
+                            title="Open Secure Link"
+                            onClick={() => window.open(file.url, '_blank', 'noopener,noreferrer')}
+                            className="p-1.5 text-slate-400 hover:text-[#C9A227] hover:bg-amber-50 rounded-lg transition-all"
                           >
-                            <Trash2 className="w-4 h-4" />
+                            <ExternalLink className="w-4 h-4" />
                           </button>
+                        ) : (
+                          <>
+                            <button title="View" className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all">
+                              <Eye className="w-4 h-4" />
+                            </button>
+                            <button title="Download" className="p-1.5 text-slate-400 hover:text-green-600 hover:bg-green-50 rounded-lg transition-all">
+                              <Download className="w-4 h-4" />
+                            </button>
+                            {user?.role !== 'Client' && (
+                              <button title="Share" onClick={() => handleShare(file)} className="p-1.5 text-slate-400 hover:text-[#C9A227] hover:bg-amber-50 rounded-lg transition-all">
+                                <Share2 className="w-4 h-4" />
+                              </button>
+                            )}
+                            {(user?.role === 'Administrator' || String(file.uploadedById) === String(user?.id)) && (
+                              <button
+                                title="Delete"
+                                onClick={() => setConfirmDelete(file)}
+                                className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            )}
+                          </>
                         )}
                       </div>
                     </td>
@@ -196,8 +230,8 @@ export default function FilesPage() {
         ) : (
           <EmptyState
             icon={Files}
-            title="No files found"
-            description={search ? 'No files match your search.' : 'Upload a document to get started.'}
+            title={user?.role === 'Client' ? 'No files shared with you yet' : 'No files found'}
+            description={search ? 'No files match your search.' : user?.role === 'Client' ? 'When a Partner shares a file with your email, it will appear here.' : 'Upload a document to get started.'}
             action={user?.role !== 'Client' && (
               <Button onClick={() => navigate('/upload')} icon={Files}>Upload File</Button>
             )}
