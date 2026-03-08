@@ -1,64 +1,30 @@
-const nodemailer = require('nodemailer');
+const { Resend } = require('resend');
 
-// Enhanced mailer configuration with error handling and logging
-const createTransporter = () => {
-  const emailUser = process.env.EMAIL_USER;
-  const emailPass = process.env.EMAIL_PASS;
-  
-  // Validate environment variables
-  if (!emailUser || !emailPass) {
-    console.error('❌ EMAIL_USER or EMAIL_PASS not set in environment variables');
-    throw new Error('Email credentials not configured');
-  }
-  
-  const transporter = nodemailer.createTransport({
-    host: 'smtp.gmail.com',
-    port: 465,
-    secure: true,
-    connectionTimeout: 10000, // 10 seconds connection timeout
-    greetingTimeout: 5000,    // 5 seconds greeting timeout
-    socketTimeout: 10000,     // 10 seconds socket timeout
-    auth: {
-      user: emailUser,
-      pass: emailPass
-    },
-    // Add debugging in production
-    debug: process.env.NODE_ENV === 'production',
-    logger: process.env.NODE_ENV === 'production'
-  });
-  
-  // Verify connection on creation
-  transporter.verify((error, success) => {
-    if (error) {
-      console.error('❌ Mailer connection failed:', error);
-      if (process.env.NODE_ENV === 'production') {
-        console.error('🔧 Production Email Debug Info:', {
-          user: emailUser,
-          host: 'smtp.gmail.com',
-          port: 465,
-          secure: true,
-          nodeEnv: process.env.NODE_ENV
-        });
-      }
-    } else {
-      console.log('✅ Mailer server connection established');
-    }
-  });
-  
-  return transporter;
-};
+// Initialize Resend client
+const resend = new Resend(process.env.RESEND_API_KEY);
 
-// Create and export transporter with error handling
-const transporter = createTransporter();
+// Validate API key on initialization
+if (!process.env.RESEND_API_KEY) {
+  console.error('❌ RESEND_API_KEY not set in environment variables');
+  throw new Error('Resend API key not configured');
+}
 
-// Enhanced sendMail function with retry logic
+// Enhanced sendEmail function with retry logic
 const sendEmailWithRetry = async (mailOptions, maxRetries = 3) => {
   const retryDelay = 1000; // 1 second initial delay
   
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
-      const result = await transporter.sendMail(mailOptions);
+      const result = await resend.emails.send({
+        from: mailOptions.from,
+        to: [mailOptions.to],
+        subject: mailOptions.subject,
+        text: mailOptions.text,
+        html: mailOptions.html
+      });
+      
       console.log(`✅ Email sent successfully on attempt ${attempt} to ${mailOptions.to}`);
+      console.log(`📬 Resend Message ID: ${result.data?.id}`);
       return result;
     } catch (error) {
       console.error(`❌ Email send attempt ${attempt} failed:`, error.message);
@@ -70,8 +36,7 @@ const sendEmailWithRetry = async (mailOptions, maxRetries = 3) => {
           from: mailOptions.from,
           subject: mailOptions.subject,
           error: error.message,
-          code: error.code,
-          command: error.command,
+          code: error.statusCode || 'UNKNOWN',
           attempt: attempt,
           maxRetries: maxRetries
         });
@@ -88,5 +53,28 @@ const sendEmailWithRetry = async (mailOptions, maxRetries = 3) => {
   }
 };
 
-module.exports = { transporter, sendEmailWithRetry };
+// Test Resend configuration
+const testResendConnection = async () => {
+  try {
+    console.log('🧪 Testing Resend API connection...');
+    console.log('🔑 API Key configured:', process.env.RESEND_API_KEY ? 'YES' : 'NO');
+    
+    // Test with a simple email
+    const result = await sendEmailWithRetry({
+      from: `DocShare <${process.env.RESEND_FROM_EMAIL || 'onboarding@resend.dev'}>`,
+      to: process.env.RESEND_TEST_EMAIL || process.env.RESEND_FROM_EMAIL,
+      subject: '🧪 Resend API Test',
+      text: 'This is a test email from Resend API.',
+      html: '<p>This is a test email from Resend API.</p>'
+    });
+    
+    console.log('✅ Resend API test successful!');
+    return true;
+  } catch (error) {
+    console.error('❌ Resend API test failed:', error.message);
+    return false;
+  }
+};
+
+module.exports = { resend, sendEmailWithRetry, testResendConnection };
 

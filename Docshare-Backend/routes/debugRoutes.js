@@ -1,23 +1,22 @@
 const express = require('express');
 const router = express.Router();
-const { sendEmailWithRetry } = require('../config/mailer');
-const testGmailConnection = require('../utils/testGmailConnection');
+const { sendEmailWithRetry, testResendConnection } = require('../config/mailer');
 
 // Test email configuration endpoint
 router.post('/test-email', async (req, res) => {
   try {
     const { testEmail } = req.body;
-    const targetEmail = testEmail || process.env.EMAIL_USER;
+    const targetEmail = testEmail || process.env.RESEND_FROM_EMAIL || 'onboarding@resend.dev';
     
-    console.log('🧪 Testing email service...');
+    console.log('🧪 Testing Resend email service...');
     console.log('📧 Target email:', targetEmail);
-    console.log('🔧 Email user configured:', process.env.EMAIL_USER ? 'YES' : 'NO');
-    console.log('🔑 Email pass configured:', process.env.EMAIL_PASS ? 'YES' : 'NO');
+    console.log('🔧 Resend API Key configured:', process.env.RESEND_API_KEY ? 'YES' : 'NO');
+    console.log('� From email:', process.env.RESEND_FROM_EMAIL || 'onboarding@resend.dev');
     console.log('🌍 Environment:', process.env.NODE_ENV);
     
     const testOTP = '123456'; // Test OTP
     const result = await sendEmailWithRetry({
-      from: `"DocShare Test" <${process.env.EMAIL_USER}>`,
+      from: `DocShare Test <${process.env.RESEND_FROM_EMAIL || 'onboarding@resend.dev'}>`,
       to: targetEmail,
       subject: '🧪 DocShare Email Service Test',
       text: `This is a test email from DocShare backend.\n\nTest OTP: ${testOTP}\n\nIf you receive this, the email service is working correctly.`,
@@ -33,24 +32,25 @@ router.post('/test-email', async (req, res) => {
           <p style="color:#64748B;font-size:11px">
             <strong>Debug Info:</strong><br>
             Environment: ${process.env.NODE_ENV}<br>
-            Email User: ${process.env.EMAIL_USER}<br>
+            Email Service: Resend API<br>
+            From Email: ${process.env.RESEND_FROM_EMAIL || 'onboarding@resend.dev'}<br>
             Timestamp: ${new Date().toISOString()}
           </p>
         </div>
       `,
     });
     
-    console.log('✅ Test email sent successfully:', result.messageId);
+    console.log('✅ Test email sent successfully:', result.data?.id);
     
     res.json({ 
       success: true, 
       message: 'Test email sent successfully',
       details: {
         targetEmail,
-        messageId: result.messageId,
+        messageId: result.data?.id,
         timestamp: new Date().toISOString(),
         environment: process.env.NODE_ENV,
-        emailConfigured: !!process.env.EMAIL_USER
+        emailConfigured: !!process.env.RESEND_API_KEY
       }
     });
     
@@ -62,8 +62,8 @@ router.post('/test-email', async (req, res) => {
       error: error.message,
       details: {
         environment: process.env.NODE_ENV,
-        emailUserConfigured: !!process.env.EMAIL_USER,
-        emailPassConfigured: !!process.env.EMAIL_PASS,
+        emailUserConfigured: !!process.env.RESEND_API_KEY,
+        emailPassConfigured: !!process.env.RESEND_FROM_EMAIL,
         timestamp: new Date().toISOString()
       }
     });
@@ -74,9 +74,9 @@ router.post('/test-email', async (req, res) => {
 router.get('/email-config', (req, res) => {
   const config = {
     environment: process.env.NODE_ENV,
-    emailUser: process.env.EMAIL_USER ? 'CONFIGURED' : 'NOT SET',
-    emailPass: process.env.EMAIL_PASS ? 'CONFIGURED' : 'NOT SET',
-    emailPassLength: process.env.EMAIL_PASS ? process.env.EMAIL_PASS.length : 0,
+    resendApiKey: process.env.RESEND_API_KEY ? 'CONFIGURED' : 'NOT SET',
+    resendFromEmail: process.env.RESEND_FROM_EMAIL || 'onboarding@resend.dev',
+    emailService: 'Resend API',
     timestamp: new Date().toISOString()
   };
   
@@ -88,27 +88,27 @@ router.get('/email-config', (req, res) => {
   });
 });
 
-// Test Gmail SMTP connection
-router.get('/test-gmail', async (req, res) => {
+// Test Resend API connection
+router.get('/test-resend', async (req, res) => {
   try {
-    console.log('🧪 Starting Gmail SMTP connection test...');
-    const success = await testGmailConnection();
+    console.log('🧪 Starting Resend API connection test...');
+    const success = await testResendConnection();
     
     if (success) {
       res.json({
         success: true,
-        message: 'Gmail SMTP connection test passed',
+        message: 'Resend API connection test passed',
         timestamp: new Date().toISOString()
       });
     } else {
       res.status(500).json({
         success: false,
-        message: 'Gmail SMTP connection test failed',
+        message: 'Resend API connection test failed',
         timestamp: new Date().toISOString()
       });
     }
   } catch (error) {
-    console.error('❌ Gmail test endpoint error:', error);
+    console.error('❌ Resend test endpoint error:', error);
     res.status(500).json({
       success: false,
       error: error.message,

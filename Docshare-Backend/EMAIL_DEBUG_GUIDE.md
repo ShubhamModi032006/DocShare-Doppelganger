@@ -1,168 +1,162 @@
-# Email Service Debugging Guide
+# Email Service Debugging Guide - Resend API
 
-## 🚨 Production Email Issues - Debugging Steps
+## 🚨 Production Email Issues - Resend API Setup
 
 ### 1. Environment Variables Verification
 ```bash
 # Check if environment variables are set correctly
-echo "EMAIL_USER: $EMAIL_USER"
-echo "EMAIL_PASS: $EMAIL_PASS"  # Should be 16 characters
+echo "RESEND_API_KEY: $RESEND_API_KEY"
+echo "RESEND_FROM_EMAIL: $RESEND_FROM_EMAIL"
 echo "NODE_ENV: $NODE_ENV"
 ```
 
-### 2. Gmail App Password Setup
-**CRITICAL**: Use App Password, NOT regular Gmail password
+### 2. Resend API Setup
+**CRITICAL**: Use Resend API, NOT Gmail SMTP
 
-1. **Enable 2-Step Verification**:
-   - Go to: https://myaccount.google.com/security
-   - Enable 2-Step Verification
+1. **Create Resend Account**:
+   - Go to: https://resend.com
+   - Sign up for free account
 
-2. **Generate App Password**:
-   - Go to: https://myaccount.google.com/apppasswords
-   - Select "Mail" for the app
-   - Select "Other (Custom name)" → Enter "DocShare Backend"
-   - Copy the 16-character password (no spaces)
+2. **Get API Key**:
+   - Go to: https://resend.com/api-keys
+   - Create new API key
+   - Copy the API key (starts with `re_`)
 
-3. **Test App Password**:
+3. **Verify Domain (Optional but recommended)**:
+   - Add your domain in Resend dashboard
+   - Add DNS records provided by Resend
+   - This allows you to send from your own domain
+
+4. **Test API Key**:
    ```javascript
    // Test script
-   const nodemailer = require('nodemailer');
+   const { Resend } = require('resend');
+   const resend = new Resend('your_api_key_here');
    
-   const transporter = nodemailer.createTransport({
-     host: 'smtp.gmail.com',
-     port: 465,
-     secure: true,
-     auth: {
-       user: 'your_email@gmail.com',
-       pass: 'your_16_char_app_password'
-     }
-   });
-   
-   transporter.verify().then(console.log).catch(console.error);
+   resend.emails.send({
+     from: 'onboarding@resend.dev',
+     to: 'your-email@example.com',
+     subject: 'Test',
+     text: 'Test email'
+   }).then(console.log).catch(console.error);
    ```
 
-### 3. Common Gmail Issues & Solutions
+### 3. Common Resend Issues & Solutions
 
-#### Issue 1: "Authentication failed"
-- **Cause**: Using regular password instead of App Password
-- **Fix**: Generate new App Password from Google Account settings
+#### Issue 1: "Invalid API key"
+- **Cause**: Wrong or expired API key
+- **Fix**: Generate new API key from Resend dashboard
 
-#### Issue 2: "Connection timeout"
-- **Cause**: Firewall blocking SMTP ports
-- **Fix**: Ensure ports 465/587 are open in production environment
+#### Issue 2: "Domain not verified"
+- **Cause**: Using custom domain without verification
+- **Fix**: Either verify domain or use `onboarding@resend.dev`
 
-#### Issue 3: "Connection refused"
-- **Cause**: Network restrictions or DNS issues
-- **Fix**: Check network connectivity and DNS resolution
+#### Issue 3: "Rate limit exceeded"
+- **Cause**: Too many emails sent in short time
+- **Fix**: Implement rate limiting or upgrade plan
 
-#### Issue 4: Gmail security blocking
-- **Cause**: Suspicious activity detected by Google
-- **Fix**: 
-  - Check Gmail for security alerts
-  - Allow less secure apps temporarily for testing
-  - Use Google Workspace if available
+#### Issue 4: "Email rejected"
+- **Cause**: Invalid recipient email or spam content
+- **Fix**: Verify email addresses and check content policies
 
 ### 4. Production Environment Checks
 
-#### Network Connectivity Test:
+#### API Key Test:
 ```bash
-# Test SMTP connectivity
-telnet smtp.gmail.com 465
-# Or using openssl
-openssl s_client -connect smtp.gmail.com:465
+# Test Resend API connection
+curl -X GET https://your-production-url/debug/test-resend
 ```
 
-#### DNS Resolution:
+#### Email Configuration:
 ```bash
-nslookup smtp.gmail.com
+# Check email configuration
+curl -X GET https://your-production-url/debug/email-config
 ```
 
-#### Firewall Rules:
+#### Send Test Email:
 ```bash
-# Check if SMTP ports are open
-netstat -an | grep :465
-netstat -an | grep :587
+# Send test email
+curl -X POST https://your-production-url/debug/test-email \
+  -H "Content-Type: application/json" \
+  -d '{"testEmail": "your-email@example.com"}'
 ```
 
-### 5. Alternative Email Services (Production-Ready)
+### 5. Resend vs Gmail SMTP - Benefits
 
-If Gmail continues to fail, consider these alternatives:
+#### Resend Advantages:
+- ✅ **Production-ready**: Built for production use
+- ✅ **No App Passwords**: Simple API key authentication
+- ✅ **Better Deliverability**: Professional email infrastructure
+- ✅ **Analytics**: Track email opens and clicks
+- ✅ **No SMTP Issues**: No firewall/port problems
+- ✅ **Scalable**: Handle high volume easily
 
-#### SendGrid (Recommended)
-```bash
-npm install @sendgrid/mail
-```
-```javascript
-const sgMail = require('@sendgrid/mail');
-sgMail.setApiKey(process.env.SENDGRID_API_KEY);
-```
-
-#### Mailgun
-```bash
-npm install mailgun-js
-```
-
-#### AWS SES
-```bash
-npm install aws-sdk
-```
+#### Gmail SMTP Issues:
+- ❌ **App Password complexity**: 16-character passwords
+- ❌ **Security restrictions**: Google blocking
+- ❌ **Port blocking**: Firewall issues in production
+- ❌ **Rate limiting**: Strict sending limits
+- ❌ **Not production-ready**: Designed for personal use
 
 ### 6. Monitoring & Alerting
 
 #### Email Service Health Check:
 ```javascript
-// Add to your monitoring system
+// Built into the new debug endpoints
 const checkEmailService = async () => {
   try {
-    await transporter.verify();
-    console.log('✅ Email service healthy');
+    await testResendConnection();
+    console.log('✅ Resend API service healthy');
   } catch (error) {
-    console.error('❌ Email service down:', error);
+    console.error('❌ Resend API service down:', error);
     // Send alert to monitoring system
   }
 };
 ```
 
 #### Log Analysis:
-- Monitor error logs for email failures
+- Monitor Resend API response codes
 - Track success/failure rates
 - Set up alerts for high failure rates
+- Monitor API key usage
 
 ### 7. Quick Production Fix Script
 
-Create a test endpoint to verify email configuration:
+The debug endpoints are already set up for testing:
 ```javascript
-// Add to your routes for testing
-app.post('/test-email', async (req, res) => {
-  try {
-    const result = await sendEmailWithRetry({
-      to: req.body.email || process.env.EMAIL_USER,
-      subject: 'Email Service Test',
-      text: 'Email service is working correctly!'
-    });
-    res.json({ success: true, message: 'Test email sent', result });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
+// POST /debug/test-email - Test email sending
+// GET /debug/email-config - Check configuration
+// GET /debug/test-resend - Test API connection
 ```
 
 ### 8. Security Best Practices
 
-1. **Never commit email credentials to git**
+1. **Never commit API keys to git**
 2. **Use environment-specific .env files**
-3. **Rotate App Passwords regularly**
-4. **Monitor for unusual email activity**
+3. **Rotate API keys regularly**
+4. **Monitor API key usage**
 5. **Implement rate limiting for email sending**
+6. **Use domain verification for production**
 
 ### 9. Troubleshooting Checklist
 
-- [ ] Gmail 2-Step Verification enabled
-- [ ] App Password generated (16 characters)
+- [ ] Resend account created and verified
+- [ ] API key generated and configured
+- [ ] Domain verified (if using custom domain)
 - [ ] Environment variables set correctly
-- [ ] SMTP ports open in production
-- [ ] DNS resolution working
-- [ ] No Gmail security alerts
-- [ ] Enhanced error logging implemented
-- [ ] Retry mechanism configured
+- [ ] API connection working
+- [ ] Test emails sending successfully
 - [ ] Monitoring system in place
+- [ ] Rate limiting implemented
+
+### 10. Migration Complete
+
+Your application has been successfully migrated from Gmail SMTP to Resend API:
+
+- ✅ **mailer.js**: Replaced with Resend client
+- ✅ **authController.js**: Updated to use Resend
+- ✅ **debugRoutes.js**: New Resend testing endpoints
+- ✅ **Environment variables**: Updated for Resend
+- ✅ **Console fallback**: Still shows OTP for debugging
+
+The email service is now production-ready and much more reliable!
