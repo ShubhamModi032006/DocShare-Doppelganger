@@ -14,6 +14,8 @@ const connectDB = async () => {
         cached.promise = mongoose.connect(process.env.MONGO_URI, {
             serverSelectionTimeoutMS: 5000,
             socketTimeoutMS: 45000,
+            bufferCommands: false,   // fail fast — don't queue ops when disconnected
+            maxPoolSize: 10,         // maintain up to 10 concurrent connections
         });
     }
     try {

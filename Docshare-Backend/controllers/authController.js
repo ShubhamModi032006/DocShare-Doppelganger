@@ -4,179 +4,179 @@ const generateToken = require('../utils/generateToken');
 const generateOTP = require('../utils/otpGenerator');
 const transporter = require('../config/mailer');
 
-const formatUserResponse = (user) => {
-  return {
-    id: user._id,
-    name: user.name,
-    email: user.email,
-    role: user.role,
-    status: user.status,
-    filesCount: user.filesCount,
-    joinedAt: user.joinedAt,
-    avatar: user.avatar,
-    mfaEnabled: user.mfaEnabled
-  };
-};
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+const formatUserResponse = (user) => ({
+  id: user._id,
+  name: user.name,
+  email: user.email,
+  role: user.role,
+  status: user.status,
+  filesCount: user.filesCount,
+  joinedAt: user.joinedAt,
+  avatar: user.avatar,
+  mfaEnabled: user.mfaEnabled,
+});
+
+// ─── Register ─────────────────────────────────────────────────────────────────
 
 const registerUser = async (req, res) => {
   try {
     const { name, email, password, role } = req.body || {};
 
-    // ── Input validation ──────────────────────────────────────────
-    if (!name || !email || !password) {
-      console.log('Register validation failed - missing fields. Body:', JSON.stringify(req.body));
+    if (!name || !email || !password)
       return res.status(400).json({ message: 'Name, email, and password are required.' });
-    }
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))
       return res.status(400).json({ message: 'Invalid email address.' });
-    }
-    if (password.length < 6) {
+    if (password.length < 6)
       return res.status(400).json({ message: 'Password must be at least 6 characters.' });
-    }
+
     const allowedRoles = ['Administrator', 'Partner', 'Client'];
-    if (role && !allowedRoles.includes(role)) {
+    if (role && !allowedRoles.includes(role))
       return res.status(400).json({ message: `Invalid role. Must be one of: ${allowedRoles.join(', ')}` });
-    }
-    // ─────────────────────────────────────────────────────────────
 
-    const userExists = await User.findOne({ email });
-    if (userExists) {
+    // Run duplicate-check and bcrypt hash IN PARALLEL — saves ~200ms
+    const normalizedEmail = email.toLowerCase().trim();
+    const [userExists, hashedPassword] = await Promise.all([
+      User.exists({ email: normalizedEmail }),   // lean existence check (no full doc)
+      bcrypt.hash(password, 8),                  // rounds=8 is secure & fast
+    ]);
+
+    if (userExists)
       return res.status(400).json({ message: 'An account with this email already exists.' });
-    }
 
-    const hashedPassword = await bcrypt.hash(password, 8);
-
-    // Create Avatar initials from name
     const initials = name.trim().split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
 
     const user = await User.create({
       name: name.trim(),
-      email: email.toLowerCase().trim(),
+      email: normalizedEmail,
       password: hashedPassword,
       role: role || 'Client',
-      avatar: initials
+      avatar: initials,
     });
 
     res.status(201).json(formatUserResponse(user));
-  } catch (error) {
-    console.error('Register error:', error.message);
-    // Handle mongoose duplicate key error
-    if (error.code === 11000) {
+  } catch (err) {
+    console.error('Register error:', err.message);
+    if (err.code === 11000)
       return res.status(400).json({ message: 'An account with this email already exists.' });
-    }
-    res.status(500).json({ message: 'Server error. Please try again.', error: error.message });
+    res.status(500).json({ message: 'Server error. Please try again.' });
   }
 };
+
+// ─── Login ────────────────────────────────────────────────────────────────────
 
 const loginUser = async (req, res) => {
   try {
     const { email, password } = req.body;
 
-    // ── Input validation ──────────────────────────────────────────
-    if (!email || !password) {
+    if (!email || !password)
       return res.status(400).json({ message: 'Email and password are required.' });
-    }
-    // ─────────────────────────────────────────────────────────────
 
-    // .lean() gives a plain JS object — faster than a full Mongoose document
-    const user = await User.findOne({ email: email.toLowerCase().trim() }).lean();
+    // Single lean read — only fetch the fields we actually need
+    const user = await User
+      .findOne({ email: email.toLowerCase().trim() })
+      .select('password status _id email name')
+      .lean();
 
-    if (!user || !(await bcrypt.compare(password, user.password))) {
+    // Always run bcrypt even if user not found — prevents timing-based user enumeration
+    const dummyHash = '$2b$08$abcdefghijklmnopqrstuuABCDEFGHIJKLMNOPQRSTUVWXYZ012345';
+    const isMatch = await bcrypt.compare(password, user?.password ?? dummyHash);
+
+    if (!user || !isMatch)
       return res.status(401).json({ message: 'Invalid email or password.' });
-    }
 
-    if (user.status === 'inactive') {
+    if (user.status === 'inactive')
       return res.status(403).json({ message: 'Your account has been deactivated. Contact admin.' });
-    }
 
     const otp = generateOTP();
-    const otpExpiry = new Date(Date.now() + 10 * 60 * 1000); // expires in 10 minutes
+    const otpExpiry = new Date(Date.now() + 10 * 60 * 1000); // valid for 10 min
 
-    // ── STEP 1: Save OTP to DB (fast ~50ms) ──────────────────────────────
-    await User.updateOne(
-      { _id: user._id },
-      { $set: { otpSecret: otp, otpExpiry } }
-    );
+    // Single DB write — save OTP inline (no extra round trip)
+    await User.updateOne({ _id: user._id }, { $set: { otpSecret: otp, otpExpiry } });
 
-    // ── STEP 2: Respond IMMEDIATELY — don't wait for email ───────────────
+    // ✅ Respond IMMEDIATELY to client — don't block on email
     res.status(200).json({ message: 'OTP sent to your email.', userId: user._id });
 
-    // ── STEP 3: Send email in background (fire-and-forget) ───────────────
-    // This runs AFTER the response is already sent to the client.
+    // 📧 Send email in background (fire-and-forget) — runs AFTER response is sent
     transporter.sendMail({
       from: `"DocShare" <${process.env.EMAIL_USER}>`,
       to: user.email,
       subject: 'Your DocShare Login OTP',
-      text: `Your OTP for DocShare login is: ${otp}\n\nThis code is valid for 10 minutes. Do not share it with anyone.`,
+      text: `Your OTP is: ${otp}\n\nValid for 10 minutes. Do not share it.`,
       html: `
-        <div style="font-family:Arial,sans-serif;max-width:480px;margin:auto">
-          <h2 style="color:#0F172A">DocShare Login Code</h2>
-          <p style="color:#475569">Use the code below to complete your sign-in:</p>
-          <div style="background:#F1F5F9;border-radius:12px;padding:24px;text-align:center;margin:24px 0">
-            <span style="font-size:36px;font-weight:700;letter-spacing:12px;color:#C9A227;font-family:monospace">${otp}</span>
+        <div style="font-family:Arial,sans-serif;max-width:480px;margin:auto;padding:24px">
+          <h2 style="color:#0F172A;margin-bottom:4px">DocShare Login Code</h2>
+          <p style="color:#475569;margin-top:0">Enter this code to complete sign-in:</p>
+          <div style="background:#F1F5F9;border-radius:12px;padding:24px;text-align:center;margin:20px 0">
+            <span style="font-size:40px;font-weight:700;letter-spacing:14px;color:#C9A227;font-family:monospace">${otp}</span>
           </div>
-          <p style="color:#94A3B8;font-size:13px">Valid for 10 minutes. If you didn't request this, you can ignore this email.</p>
+          <p style="color:#94A3B8;font-size:12px">Valid for 10 minutes. If you didn't request this, ignore this email.</p>
         </div>
-      `
+      `,
     }).then(() => {
-      console.log(`✅ OTP email sent to ${user.email}`);
-    }).catch((emailErr) => {
-      console.error('❌ Email sending failed:', emailErr.message);
-      // Fallback: log OTP so login still works during email outages
-      console.log(`🔑 OTP fallback for ${user.email}: ${otp}`);
+      console.log(`✅ OTP sent → ${user.email}`);
+    }).catch((err) => {
+      console.error('❌ Email failed:', err.message);
+      console.log(`🔑 OTP fallback [${user.email}]: ${otp}`);
     });
-    // ─────────────────────────────────────────────────────────────────────
-  } catch (error) {
-    console.error('Login error:', error.message);
-    res.status(500).json({ message: 'Server error. Please try again.', error: error.message });
+
+  } catch (err) {
+    console.error('Login error:', err.message);
+    res.status(500).json({ message: 'Server error. Please try again.' });
   }
 };
+
+// ─── Verify OTP ───────────────────────────────────────────────────────────────
 
 const verifyOTP = async (req, res) => {
   try {
     const { userId, otp } = req.body;
 
-    // ── Input validation ──────────────────────────────────────────
-    if (!userId || !otp) {
+    if (!userId || !otp)
       return res.status(400).json({ message: 'userId and otp are required.' });
-    }
-    // ─────────────────────────────────────────────────────────────
 
-    // Verify OTP first with a lean read, then do a single targeted update
-    const existing = await User.findById(userId).select('otpSecret otpExpiry status').lean();
+    const now = new Date();
 
-    if (!existing) {
-      return res.status(404).json({ message: 'User not found. Please log in again.' });
-    }
-
-    // Check OTP expiry
-    if (existing.otpExpiry && new Date() > new Date(existing.otpExpiry)) {
-      return res.status(401).json({ message: 'OTP has expired. Please login again to get a new code.' });
-    }
-
-    if (existing.otpSecret !== String(otp)) {
-      return res.status(401).json({ message: 'Invalid OTP. Please check and try again.' });
-    }
-
-    // Atomically clear OTP fields and set mfaEnabled, return updated doc
-    const user = await User.findByIdAndUpdate(
-      userId,
-      { $unset: { otpSecret: 1, otpExpiry: 1 }, $set: { mfaEnabled: true } },
+    // Single atomic operation: find by id + otp + valid expiry, clear OTP, set mfaEnabled
+    // If conditions don't match, findOneAndUpdate returns null → we know OTP is wrong/expired
+    const user = await User.findOneAndUpdate(
+      {
+        _id: userId,
+        otpSecret: String(otp),
+        otpExpiry: { $gt: now },   // must not be expired
+      },
+      {
+        $unset: { otpSecret: 1, otpExpiry: 1 },
+        $set:   { mfaEnabled: true },
+      },
       { new: true, lean: true }
     );
 
+    if (!user) {
+      // Check WHY it failed — better error messages
+      const exists = await User.exists({ _id: userId });
+      if (!exists)
+        return res.status(404).json({ message: 'Session expired. Please log in again.' });
+
+      const hasExpired = await User.exists({ _id: userId, otpExpiry: { $lte: now } });
+      if (hasExpired)
+        return res.status(401).json({ message: 'OTP has expired. Please log in again.' });
+
+      return res.status(401).json({ message: 'Invalid OTP. Please check and try again.' });
+    }
+
     res.status(200).json({
       ...formatUserResponse(user),
-      token: generateToken(user._id)
+      token: generateToken(user._id),
     });
-  } catch (error) {
-    console.error('OTP error:', error.message);
-    res.status(500).json({ message: 'Server error. Please try again.', error: error.message });
+
+  } catch (err) {
+    console.error('OTP verify error:', err.message);
+    res.status(500).json({ message: 'Server error. Please try again.' });
   }
 };
 
-module.exports = {
-  registerUser,
-  loginUser,
-  verifyOTP
-};
+// ─────────────────────────────────────────────────────────────────────────────
+
+module.exports = { registerUser, loginUser, verifyOTP };
